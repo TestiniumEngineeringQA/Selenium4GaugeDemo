@@ -6,6 +6,7 @@ import com.thoughtworks.gauge.Step;
 import org.apache.log4j.PropertyConfigurator;
 import org.junit.jupiter.api.Assertions;
 import org.openqa.selenium.*;
+import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.Select;
@@ -20,6 +21,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -1007,6 +1009,87 @@ public class BaseSteps extends BaseTest {
         System.out.printf("[FILE_READ_TEST] Txt dosyası bulundu: path=%s, size=%d bytes%n",
                 txtFile, Files.size(txtFile));
         System.out.println(content);
+    }
+
+
+    /**
+     * Spec dosyasında:
+     *   * Herhangi bir elemente tıkla
+     */
+    @Step("Herhangi bir elemente tıkla")
+    public void clickAny() {
+        logger.info("Step: herhangi bir elemente tıkla (otomatik seçim)");
+        clickAnyElement();
+    }
+
+    /**
+     * Sayfada üzerinde tıklanabilir olması muhtemel elementleri tanımlayan CSS seçici.
+     * Filtre dar tutuldu; yoksa body/html/div gibi anlamsız elementler de seçilir.
+     */
+    private static final String CLICKABLE_CSS =
+            "a[href], button, [role='button'], [role='link'], [role='menuitem'], [role='tab'], " +
+                    "input[type='button'], input[type='submit'], input[type='reset'], " +
+                    "[onclick], [data-testid], [data-test], label[for], summary";
+
+    /**
+     * Sayfadaki görünür + aktif tıklanabilir elementlerden rastgele birini seçer.
+     */
+    public WebElement findAnyClickableElement() {
+        List<WebElement> candidates = driver.findElements(By.cssSelector(CLICKABLE_CSS));
+
+        List<WebElement> clickables = candidates.stream()
+                .filter(el -> {
+                    try {
+                        return el.isDisplayed() && el.isEnabled();
+                    } catch (Exception e) {
+                        return false; // stale / detached → atla
+                    }
+                })
+                .collect(Collectors.toList());
+
+        if (clickables.isEmpty()) {
+            throw new NoSuchElementException(
+                    "Sayfada tıklanabilir görünür hiçbir element bulunamadı. Kullanılan selector: " + CLICKABLE_CSS);
+        }
+
+        Collections.shuffle(clickables, new Random());
+        WebElement picked = clickables.get(0);
+
+        logger.info("Rastgele element seçildi -> <{}> id='{}' class='{}' text='{}'",
+                picked.getTagName(),
+                picked.getAttribute("id"),
+                picked.getAttribute("class"),
+                safeText(picked));
+        return picked;
+    }
+
+    /**
+     * Herhangi bir tıklanabilir element bul, ekrana getir ve tıkla.
+     */
+    public void clickAnyElement() {
+        WebElement el = findAnyClickableElement();
+
+        try {
+            ((JavascriptExecutor) driver)
+                    .executeScript("arguments[0].scrollIntoView({block:'center'});", el);
+        } catch (Exception ignored) { }
+
+        try {
+            new WebDriverWait(driver, Duration.ofSeconds(5)).until(ExpectedConditions.elementToBeClickable(el));
+            el.click();
+        } catch (Exception e) {
+            logger.warn("Normal click başarısız ({}), JS click deneniyor", e.getMessage());
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", el);
+        }
+    }
+
+    private String safeText(WebElement el) {
+        try {
+            String t = el.getText();
+            return (t == null) ? "" : t.replaceAll("\\s+", " ").trim();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
 }
