@@ -10,4 +10,3 @@ General Test Scenario
 Tags: generalTestScenario
 
 * "https://www.testinium.com" adresine git
-* Herhangi bir elemente tıkla
